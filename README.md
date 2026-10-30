@@ -26,51 +26,117 @@ This repository provides a standalone, drop-in vendor tree for **Motorola Camera
 
 ---
 
-## 🚀 Integration Guide
+## 🛠️ How to Set Up
 
-### 1. Include in Device Tree
+### Step 1: Install Git LFS (Prerequisite)
 
-In your device makefile (e.g. `device/<oem>/<device>/device.mk` or `device.mk`):
+Because `MotCamera4.apk` is ~228 MB, it is tracked via **Git LFS** to avoid GitHub's 100 MB limit while keeping native libraries uncompressed and OEM signatures intact.
+
+Ensure Git LFS is installed on your build machine before syncing:
+
+```bash
+# Ubuntu / Debian
+sudo apt-get install git-lfs
+git lfs install
+```
+
+---
+
+### Step 2: Add to ROM Source Tree
+
+Choose one of the following methods to add the tree to your ROM workspace:
+
+#### Method A: Using Local Manifest (Recommended)
+
+Create a manifest file at `.repo/local_manifests/motocam.xml` in your Android build root:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+    <project path="vendor/motorola/camera"
+             name="project-moon-gazer/vendor_motorola_camera"
+             remote="github"
+             revision="main"
+             clone-depth="1" />
+</manifest>
+```
+
+Then sync and pull the LFS objects:
+
+```bash
+repo sync vendor/motorola/camera
+git -C vendor/motorola/camera lfs pull
+```
+
+#### Method B: Manual Git Clone
+
+Clone directly into `vendor/motorola/camera`:
+
+```bash
+git clone git@github.com:project-moon-gazer/vendor_motorola_camera.git vendor/motorola/camera --depth=1
+cd vendor/motorola/camera
+git lfs pull
+cd ../../..
+```
+
+> [!IMPORTANT]
+> Verify that `MotCamera4.apk` is ~228 MB and not a small pointer text file:
+> ```bash
+> ls -lh vendor/motorola/camera/proprietary/product/priv-app/MotCamera4/MotCamera4.apk
+> ```
+
+---
+
+### Step 3: Configure Device Tree
+
+#### A. Inherit Camera Makefile
+In your device's product makefile (e.g. `device/motorola/<device>/device.mk`):
 
 ```make
 # Motorola Camera
 $(call inherit-product, vendor/motorola/camera/camera.mk)
 ```
 
-Ensure `vendor/motorola/camera` is present in `PRODUCT_SOONG_NAMESPACES`:
+#### B. Add Soong Namespace
+Ensure `vendor/motorola/camera` is included in `PRODUCT_SOONG_NAMESPACES`:
 
 ```make
 PRODUCT_SOONG_NAMESPACES += \
     vendor/motorola/camera
 ```
 
+#### C. Add Camera Specifications in `product.prop` (Optional)
+To display rear and front camera megapixels accurately on the "About Phone" detailed specs card:
+
+```properties
+# Camera specifications
+ro.camera.rear=50 MP + 2 MP
+ro.camera.front=16 MP
+```
+
 ---
 
-### 2. Git LFS Requirement
+### Step 4: Build
 
-Due to uncompressed 64-bit native libraries inside `MotCamera4.apk` (~228 MB), this file is tracked via **Git LFS** to adhere to GitHub's 100 MB file limit while preserving original Motorola signature integrity.
-
-When syncing or cloning the repository:
+You can test-build the camera module individually or compile your complete ROM:
 
 ```bash
-# Ensure git-lfs is installed
-git lfs install
+# Set up build environment
+source build/envsetup.sh
+lunch <your_device>-user
 
-# Pull the large prebuilt binaries
-git lfs pull
-```
+# Build camera module
+m MotCamera4
 
-In your ROM's manifest XML:
-
-```xml
-<project path="vendor/motorola/camera" name="project-moon-gazer/vendor_motorola_camera" remote="github" revision="main" />
+# Or build the full ROM package
+brunch <device>
 ```
 
 ---
 
-### 3. Camera Properties (`camera.mk`)
+## ⚙️ Exported Camera Properties
 
-The following vendor properties are automatically exported by `camera.mk`:
+When `camera.mk` is inherited, the following vendor properties are automatically exported:
 
 ```properties
 persist.vendor.camera.expose.aux=1
@@ -90,6 +156,22 @@ ro.vendor.camera.noiseVibratortime=180
   The default package includes `com.motorola.camera3.fogos.xml`. For other Motorola devices (e.g. `rhode`, `penang`, `borzoi`), copy your device's stock `com.motorola.camera3.<device>.xml` into `proprietary/product/etc/permissions/` and reference it in `camera.mk`.
 * **Aperture / Default Camera Overrides**:
   `MotCamera4` is configured in `Android.bp` with `overrides: ["Aperture", "Camera", "Camera2", "GoogleCameraGo", "GCamGOPrebuilt"]` to automatically replace AOSP / LineageOS stock camera apps when included.
+
+---
+
+## ❓ Troubleshooting & FAQ
+
+#### 1. Build fails with `ZipException` or APK cannot be parsed:
+* **Cause**: `MotCamera4.apk` is still a Git LFS text pointer (~130 bytes) instead of the actual 228 MB binary.
+* **Solution**: Run `git lfs install && git -C vendor/motorola/camera lfs pull`.
+
+#### 2. App crashes with `SecurityException` or signature check failure:
+* **Cause**: The APK was re-signed with ROM test/platform keys.
+* **Solution**: Motorola Camera requires original OEM signature verification via `com.motorola.motosignature.jar`. Keep `presigned: true` in `Android.bp`.
+
+#### 3. Macro / AUX lens is not accessible or switching is slow:
+* **Cause**: The camera package name is missing from Qualcomm AUX camera whitelists.
+* **Solution**: Ensure `vendor/motorola/camera/camera.mk` is inherited in your device makefile so `vendor.camera.aux.packagelist` is set properly.
 
 ---
 
